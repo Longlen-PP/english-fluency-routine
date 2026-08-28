@@ -30,22 +30,35 @@ is a one-time, ~5 minute setup done entirely in your own Google account.
 6. Copy the **Web app URL** it gives you (looks like
    `https://script.google.com/macros/s/AKfycb.../exec`).
 
-## 4. Wire it into the app
+## 4. Wire it into the app — in your browser, not in the code
 
-Open `data.js` in this repo and paste the URL into:
+**Do not paste the URL into `data.js`.** This repo is public, so anything committed
+there is visible to anyone — including the URL, which would let a stranger POST junk
+rows into your sheet.
 
-```js
-const SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycb.../exec";
-```
+Instead, set it once in the browser you actually use the site on:
 
-Commit the change. From then on, every day that has at least one checked item will add
-a new row to the sheet when the 5:00 AM reset happens (open the site once during that
-day so the browser is the one sending it — it's not a real backend, so nothing runs
-while nobody's tab is open).
+1. Open https://longlen-pp.github.io/english-fluency-routine/
+2. Open DevTools console (F12, or right-click → Inspect → Console tab)
+3. Run:
+   ```js
+   localStorage.setItem("efr-sheets-webhook-url", "https://script.google.com/macros/s/AKfycb.../exec")
+   ```
+4. Reload the page.
+
+This is stored only in that browser's local storage — it's never sent anywhere except
+straight to your own Apps Script, and it's not part of the code anyone else can see.
+If you use the site from another device too, repeat this step there.
+
+From then on, every day that has at least one checked item adds a new row to the sheet
+when the 5:00 AM reset happens (the site has to actually be open around/after that time
+for the browser to send it — it's not a real backend, so nothing runs while no tab is
+open).
 
 ## Notes
 
 - Days with nothing checked off are skipped (no empty rows).
-- The Web App URL is not secret-proof — anyone who has it could technically POST rows
-  to your sheet. Fine for personal tracking; don't reuse this pattern for sensitive data.
-- If you ever want to stop logging, just clear `SHEETS_WEBHOOK_URL` back to `""`.
+- The Web App URL is not secret-proof even kept client-side — anyone who somehow
+  obtains it could technically POST rows to your sheet. Fine for personal tracking;
+  don't reuse this pattern for sensitive data.
+- To stop logging on a given browser: `localStorage.removeItem("efr-sheets-webhook-url")`.

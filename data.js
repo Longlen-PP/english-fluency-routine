@@ -1,9 +1,10 @@
 // Edit this file to customize the routine. No build step needed — just edit and refresh.
 
-// Google Apps Script Web App URL that logs each finished day to a Google Sheet
-// (one row per day). Leave empty to disable logging — see docs/google-sheets-setup.md
-// for how to create it. Paste the URL between the quotes once you have it, e.g.
-// "https://script.google.com/macros/s/AKfycb.../exec"
+// Default Google Apps Script Web App URL — leave this EMPTY. This file is public
+// (committed to a public repo), so don't paste your real URL here or anyone
+// reading the source can spam rows into your sheet.
+// Instead set it once per browser via localStorage — see docs/google-sheets-setup.md
+// step 4. script.js reads localStorage first and only falls back to this constant.
 const SHEETS_WEBHOOK_URL = "";
 
 const CATEGORIES = {

@@ -1,7 +1,12 @@
 const STORAGE_KEY = "efr-checklist"; // { [blockId]: true }
 const TAB_KEY = "efr-active-tab";
 const LAST_DATE_KEY = "efr-last-routine-date";
+const SHEETS_URL_KEY = "efr-sheets-webhook-url"; // per-browser override, kept out of the public repo
 const RESET_HOUR = 5; // the checklist rolls over to a new day at 5:00 AM, not midnight
+
+function getSheetsWebhookUrl() {
+  return localStorage.getItem(SHEETS_URL_KEY) || SHEETS_WEBHOOK_URL || "";
+}
 
 // "Routine date" = calendar date, except 00:00–04:59 still counts as the previous day
 // (so staying up late doesn't wipe last night's checklist before you go to sleep).
@@ -55,14 +60,15 @@ function logCompletionForDay(dateKey, checklist) {
     completedTitles: completedTitles.join("; "),
   };
 
-  if (!SHEETS_WEBHOOK_URL) {
+  const webhookUrl = getSheetsWebhookUrl();
+  if (!webhookUrl) {
     console.log("[EFR] routine day closed (no webhook configured yet):", payload);
     return;
   }
 
   // `text/plain` + `no-cors` avoids a CORS preflight that Apps Script Web Apps
   // don't reliably answer — the request still lands in doPost() on the other end.
-  fetch(SHEETS_WEBHOOK_URL, {
+  fetch(webhookUrl, {
     method: "POST",
     mode: "no-cors",
     headers: { "Content-Type": "text/plain" },
