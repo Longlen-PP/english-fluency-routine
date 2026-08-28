@@ -1,5 +1,39 @@
 const STORAGE_KEY = "efr-checklist"; // { [blockId]: true }
 const TAB_KEY = "efr-active-tab";
+const LAST_DATE_KEY = "efr-last-routine-date";
+const RESET_HOUR = 5; // the checklist rolls over to a new day at 5:00 AM, not midnight
+
+// "Routine date" = calendar date, except 00:00–04:59 still counts as the previous day
+// (so staying up late doesn't wipe last night's checklist before you go to sleep).
+function getRoutineDateKey(d = new Date()) {
+  const shifted = new Date(d.getTime());
+  if (shifted.getHours() < RESET_HOUR) shifted.setDate(shifted.getDate() - 1);
+  const y = shifted.getFullYear();
+  const m = String(shifted.getMonth() + 1).padStart(2, "0");
+  const day = String(shifted.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// Called once per load and periodically while the tab stays open.
+// Returns true if the day actually rolled over (so the caller knows to re-render).
+function checkDailyRollover() {
+  const todayKey = getRoutineDateKey();
+  const lastKey = localStorage.getItem(LAST_DATE_KEY);
+  if (lastKey && lastKey !== todayKey) {
+    logCompletionForDay(lastKey, loadChecklist());
+    saveChecklist({});
+    localStorage.setItem(LAST_DATE_KEY, todayKey);
+    return true;
+  }
+  if (!lastKey) localStorage.setItem(LAST_DATE_KEY, todayKey);
+  return false;
+}
+
+// Hook: wire this up once a logging backend (Google Sheets / Firebase) is chosen.
+// For now it just prints to the console so nothing is silently lost.
+function logCompletionForDay(dateKey, checklist) {
+  console.log("[EFR] routine day closed:", dateKey, checklist);
+}
 
 const dayKeys = Object.keys(SCHEDULES);
 let activeTab = localStorage.getItem(TAB_KEY) || dayKeys[0];
@@ -151,6 +185,13 @@ document.getElementById("resetBtn").addEventListener("click", () => {
   renderTimeline();
 });
 
+checkDailyRollover();
 renderAll();
 renderResources();
 renderPriority();
+
+// In case the tab is left open overnight, check every 5 minutes whether
+// 5:00 AM has passed so the checklist still clears without a manual refresh.
+setInterval(() => {
+  if (checkDailyRollover()) renderTimeline();
+}, 5 * 60 * 1000);
