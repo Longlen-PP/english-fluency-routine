@@ -29,10 +29,45 @@ function checkDailyRollover() {
   return false;
 }
 
-// Hook: wire this up once a logging backend (Google Sheets / Firebase) is chosen.
-// For now it just prints to the console so nothing is silently lost.
+// Sends one summary row for the day that just closed to the Google Sheets
+// webhook configured in data.js (SHEETS_WEBHOOK_URL). No-ops if it's empty,
+// or if nothing was checked off that day (skip logging empty days).
 function logCompletionForDay(dateKey, checklist) {
-  console.log("[EFR] routine day closed:", dateKey, checklist);
+  const doneIds = Object.keys(checklist).filter((id) => checklist[id]);
+  if (doneIds.length === 0) return;
+
+  const matchedKey = Object.keys(SCHEDULES).find((key) =>
+    SCHEDULES[key].blocks.some((b) => doneIds.includes(b.id))
+  );
+  if (!matchedKey) return;
+
+  const schedule = SCHEDULES[matchedKey];
+  const completedTitles = schedule.blocks
+    .filter((b) => doneIds.includes(b.id))
+    .map((b) => b.title);
+
+  const payload = {
+    date: dateKey,
+    dayType: schedule.label,
+    completed: completedTitles.length,
+    total: schedule.blocks.length,
+    percent: Math.round((completedTitles.length / schedule.blocks.length) * 100),
+    completedTitles: completedTitles.join("; "),
+  };
+
+  if (!SHEETS_WEBHOOK_URL) {
+    console.log("[EFR] routine day closed (no webhook configured yet):", payload);
+    return;
+  }
+
+  // `text/plain` + `no-cors` avoids a CORS preflight that Apps Script Web Apps
+  // don't reliably answer — the request still lands in doPost() on the other end.
+  fetch(SHEETS_WEBHOOK_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "text/plain" },
+    body: JSON.stringify(payload),
+  }).catch((err) => console.error("[EFR] failed to log day to Google Sheets:", err));
 }
 
 const dayKeys = Object.keys(SCHEDULES);

@@ -1,5 +1,11 @@
 // Edit this file to customize the routine. No build step needed — just edit and refresh.
 
+// Google Apps Script Web App URL that logs each finished day to a Google Sheet
+// (one row per day). Leave empty to disable logging — see docs/google-sheets-setup.md
+// for how to create it. Paste the URL between the quotes once you have it, e.g.
+// "https://script.google.com/macros/s/AKfycb.../exec"
+const SHEETS_WEBHOOK_URL = "";
+
 const CATEGORIES = {
   english:  { label: "English Practice", color: "#3B82F6" },
   exercise: { label: "Exercise",          color: "#22C55E" },
