@@ -314,12 +314,14 @@ function renderResources() {
 // always against the shipped SCHEDULES (not a per-browser Edit override), since
 // that's what the log's "Day Type"/"Activity" text was written against. Renaming
 // a block in data.js orphans its older log rows from this matching.
+// Locked blocks (e.g. Sleep) are included too — they always get logged as done
+// alongside whatever was checked, so they'll always show 100%, but Ize wants
+// them visible in the bars rather than silently excluded.
 function buildExpectedActivities() {
   const list = [];
   Object.keys(SCHEDULES).forEach((key) => {
     const schedule = SCHEDULES[key];
     schedule.blocks.forEach((b) => {
-      if (b.locked) return; // always "done" — no signal in tracking it
       list.push({ dayType: schedule.label, time: b.time, title: b.title, category: b.category });
     });
   });
@@ -378,7 +380,8 @@ function aggregateByCategory(activityStats) {
 }
 
 // Composition (not completion rate): of everything actually logged in the
-// filtered range, what share belongs to each category — feeds the pie chart.
+// filtered range, what share belongs to each category — feeds the pie chart
+// in Category mode.
 function computeCategoryComposition(rows) {
   const counts = {};
   rows.forEach((r) => {
@@ -391,6 +394,31 @@ function computeCategoryComposition(rows) {
       category: key,
       count: counts[key],
       sharePct: total ? Math.round((counts[key] / total) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+// Same idea as computeCategoryComposition, but one slice per activity title
+// instead of per category — feeds the pie chart in Activity mode. Titles are
+// shared across both day types for identical blocks (e.g. "Shower"), so those
+// naturally merge into one slice; only the couple of day-specific blocks
+// (Football practice / Study: making money with AI) stay distinct.
+function computeActivityComposition(rows) {
+  const counts = {};
+  const categoryByActivity = {};
+  rows.forEach((r) => {
+    counts[r.activity] = (counts[r.activity] || 0) + 1;
+    if (!categoryByActivity[r.activity]) {
+      categoryByActivity[r.activity] = CATEGORY_LABEL_TO_KEY[r.category] || r.category;
+    }
+  });
+  const total = rows.length;
+  return Object.keys(counts)
+    .map((title) => ({
+      category: categoryByActivity[title], // drives slice color
+      label: title, // overrides the category label in the legend
+      count: counts[title],
+      sharePct: total ? Math.round((counts[title] / total) * 1000) / 10 : 0,
     }))
     .sort((a, b) => b.count - a.count);
 }
@@ -408,7 +436,7 @@ function renderPieHtml(composition) {
   const legendHtml = composition
     .map((c) => {
       const cat = CATEGORIES[c.category] || CATEGORIES.misc;
-      return `<span class="dash-pie-legend-item"><span class="dot" style="background:${cat.color}"></span>${cat.label} — ${c.sharePct}%</span>`;
+      return `<span class="dash-pie-legend-item"><span class="dot" style="background:${cat.color}"></span>${c.label || cat.label} — ${c.sharePct}%</span>`;
     })
     .join("");
   return `
@@ -513,7 +541,10 @@ function renderDashboardBody() {
   const summary = dayTypeCounts
     .map((d) => `${d.dayType}: ${d.days} day${d.days === 1 ? "" : "s"} logged`)
     .join(" · ");
-  const pieHtml = renderPieHtml(computeCategoryComposition(rows));
+  const composition = dashboardMode === "category"
+    ? computeCategoryComposition(rows)
+    : computeActivityComposition(rows);
+  const pieHtml = renderPieHtml(composition);
   const insight = renderInsight(stats);
   const listStats = dashboardMode === "category" ? aggregateByCategory(stats) : stats;
   const listHtml = renderStatsListHtml(listStats, dashboardMode);
