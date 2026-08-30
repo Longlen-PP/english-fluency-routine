@@ -379,20 +379,6 @@ function computeDashboardStats(rows) {
   return { stats, dayTypeCounts };
 }
 
-// Rolls up per-activity stats into per-category completion rates (weighted by
-// each category's total done/denom, not a plain average of percentages).
-function aggregateByCategory(activityStats) {
-  const byCat = {};
-  activityStats.forEach((a) => {
-    if (!byCat[a.category]) byCat[a.category] = { category: a.category, done: 0, denom: 0 };
-    byCat[a.category].done += a.done;
-    byCat[a.category].denom += a.denom;
-  });
-  return Object.values(byCat)
-    .map((c) => ({ ...c, pct: c.denom ? Math.round((c.done / c.denom) * 100) : null }))
-    .sort((a, b) => a.pct - b.pct);
-}
-
 // Composition (not completion rate): of everything actually logged in the
 // filtered range, what share belongs to each category — feeds the pie chart
 // in Category mode.
@@ -560,7 +546,15 @@ function renderDashboardBody() {
     : computeActivityComposition(rows);
   const pieHtml = renderPieHtml(composition);
   const insight = renderInsight(stats);
-  const listStats = dashboardMode === "category" ? aggregateByCategory(stats) : stats;
+  // Category mode's list mirrors the pie: each bar is that category's share of
+  // everything logged (contribution of the grand total), not a completion
+  // rate — a rate mixing Sleep (always done) with rarely-logged blocks like
+  // Morning nap in the same category read as an arbitrarily low, confusing %.
+  const listStats = dashboardMode === "category"
+    ? composition
+        .map((c) => ({ category: c.category, done: c.count, pct: Math.round(c.sharePct) }))
+        .sort((a, b) => a.pct - b.pct)
+    : stats;
   const listHtml = renderStatsListHtml(listStats, dashboardMode);
 
   body.innerHTML = `
