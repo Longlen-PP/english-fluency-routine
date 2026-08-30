@@ -461,7 +461,7 @@ function renderStatsListHtml(list, mode) {
     .map((a) => {
       const cat = CATEGORIES[a.category] || CATEGORIES.misc;
       const label = mode === "category" ? cat.label : a.title;
-      const sub = mode === "category" ? `${a.done}/${a.denom} completions` : `${a.dayType} · ${a.time}`;
+      const sub = mode === "category" ? `${a.done} completion${a.done === 1 ? "" : "s"}` : `${a.dayType} · ${a.time}`;
       return `
         <div class="dash-row">
           <div class="dash-meta">
