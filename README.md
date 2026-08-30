@@ -47,3 +47,8 @@ There are two ways to change the schedule content (time, title, detail, category
 - Right before resetting, if anything was checked off, it can log one row per completed
   activity (date, day type, time, category, activity) to a Google Sheet. Disabled by
   default — see [`docs/google-sheets-setup.md`](docs/google-sheets-setup.md) to enable it.
+- Once logging is enabled, the **"Where You're Falling Behind" dashboard** near the
+  bottom of the page reads that same sheet back and ranks every activity by how often
+  it actually got checked off, worst first — so it's easy to see which slots keep
+  getting skipped. Days with nothing checked off never get logged at all, so this is a
+  best case, not the full picture.

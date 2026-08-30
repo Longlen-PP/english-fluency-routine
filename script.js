@@ -3,7 +3,9 @@ const TAB_KEY = "efr-active-tab";
 const LAST_DATE_KEY = "efr-last-routine-date";
 const SHEETS_URL_KEY = "efr-sheets-webhook-url"; // per-browser override, kept out of the public repo
 const SCHEDULE_OVERRIDE_KEY = "efr-schedules-override"; // per-browser edits made via the Edit button, layered on top of data.js
+const DASH_MODE_KEY = "efr-dashboard-mode"; // "activity" | "category", per-browser
 const RESET_HOUR = 1; // the checklist rolls over to a new day at 1:00 AM, not midnight
+const DASHBOARD_TAB = "dashboard";
 
 function getSheetsWebhookUrl() {
   return localStorage.getItem(SHEETS_URL_KEY) || SHEETS_WEBHOOK_URL || "";
@@ -109,13 +111,22 @@ function logCompletionForDay(dateKey, checklist) {
 }
 
 const dayKeys = Object.keys(SCHEDULES);
+const viewKeys = [...dayKeys, DASHBOARD_TAB];
 let activeTab = localStorage.getItem(TAB_KEY) || dayKeys[0];
-if (!dayKeys.includes(activeTab)) activeTab = dayKeys[0];
+if (!viewKeys.includes(activeTab)) activeTab = dayKeys[0];
 
 // Edit mode: while active, `draftBlocks` holds the working copy of the active
 // tab's blocks. Nothing is persisted until Save; Cancel just discards it.
 let editMode = false;
 let draftBlocks = null;
+
+// Dashboard state — rows are fetched once per page load (not on every filter/
+// mode change) and cached here; filtering/aggregation re-runs client-side.
+let dashboardRows = null; // null = not fetched yet, [] = fetched (possibly empty)
+let dashboardLoadError = null; // null | "fetch-failed"
+let dashboardMode = localStorage.getItem(DASH_MODE_KEY) || "activity";
+let dashboardFrom = null;
+let dashboardTo = null;
 
 function loadChecklist() {
   try {
@@ -133,10 +144,10 @@ function renderTabs() {
   tabsEl.classList.toggle("disabled", editMode);
   tabsEl.innerHTML = "";
   const schedules = getSchedules();
-  dayKeys.forEach((key) => {
+  viewKeys.forEach((key) => {
     const btn = document.createElement("button");
     btn.className = "tab";
-    btn.textContent = schedules[key].label;
+    btn.textContent = key === DASHBOARD_TAB ? "📊 Dashboard" : schedules[key].label;
     btn.role = "tab";
     btn.setAttribute("aria-selected", key === activeTab ? "true" : "false");
     btn.addEventListener("click", () => {
@@ -299,6 +310,229 @@ function renderResources() {
   });
 }
 
+// The dashboard matches log rows back to schedule blocks by (dayType, title) —
+// always against the shipped SCHEDULES (not a per-browser Edit override), since
+// that's what the log's "Day Type"/"Activity" text was written against. Renaming
+// a block in data.js orphans its older log rows from this matching.
+function buildExpectedActivities() {
+  const list = [];
+  Object.keys(SCHEDULES).forEach((key) => {
+    const schedule = SCHEDULES[key];
+    schedule.blocks.forEach((b) => {
+      if (b.locked) return; // always "done" — no signal in tracking it
+      list.push({ dayType: schedule.label, time: b.time, title: b.title, category: b.category });
+    });
+  });
+  return list;
+}
+
+// The log stores each row's category as its display LABEL (e.g. "English
+// Practice"), not the internal key CATEGORIES is keyed by — this maps back.
+const CATEGORY_LABEL_TO_KEY = Object.keys(CATEGORIES).reduce((acc, key) => {
+  acc[CATEGORIES[key].label] = key;
+  return acc;
+}, {});
+
+// Denominator per activity = number of distinct days *of that day type* that
+// have any logged row at all (days with zero checked items are never logged,
+// so they can't be counted here — see the caveat note in the dashboard section).
+function computeDashboardStats(rows) {
+  const datesByDayType = {};
+  const countByKey = {};
+  rows.forEach((r) => {
+    if (!datesByDayType[r.dayType]) datesByDayType[r.dayType] = new Set();
+    datesByDayType[r.dayType].add(r.date);
+    const key = r.dayType + "|||" + r.activity;
+    countByKey[key] = (countByKey[key] || 0) + 1;
+  });
+
+  const stats = buildExpectedActivities()
+    .map((a) => {
+      const denom = (datesByDayType[a.dayType] || new Set()).size;
+      const done = countByKey[a.dayType + "|||" + a.title] || 0;
+      return { ...a, done, denom, pct: denom ? Math.round((done / denom) * 100) : null };
+    })
+    .filter((a) => a.denom > 0)
+    .sort((a, b) => a.pct - b.pct);
+
+  const dayTypeCounts = Object.keys(datesByDayType).map((key) => ({
+    dayType: key,
+    days: datesByDayType[key].size,
+  }));
+
+  return { stats, dayTypeCounts };
+}
+
+// Rolls up per-activity stats into per-category completion rates (weighted by
+// each category's total done/denom, not a plain average of percentages).
+function aggregateByCategory(activityStats) {
+  const byCat = {};
+  activityStats.forEach((a) => {
+    if (!byCat[a.category]) byCat[a.category] = { category: a.category, done: 0, denom: 0 };
+    byCat[a.category].done += a.done;
+    byCat[a.category].denom += a.denom;
+  });
+  return Object.values(byCat)
+    .map((c) => ({ ...c, pct: c.denom ? Math.round((c.done / c.denom) * 100) : null }))
+    .sort((a, b) => a.pct - b.pct);
+}
+
+// Composition (not completion rate): of everything actually logged in the
+// filtered range, what share belongs to each category — feeds the pie chart.
+function computeCategoryComposition(rows) {
+  const counts = {};
+  rows.forEach((r) => {
+    const key = CATEGORY_LABEL_TO_KEY[r.category] || r.category;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  const total = rows.length;
+  return Object.keys(counts)
+    .map((key) => ({
+      category: key,
+      count: counts[key],
+      sharePct: total ? Math.round((counts[key] / total) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function renderPieHtml(composition) {
+  if (composition.length === 0) return "";
+  let acc = 0;
+  const stops = composition.map((c, i) => {
+    const cat = CATEGORIES[c.category] || CATEGORIES.misc;
+    const start = acc;
+    acc += c.sharePct;
+    if (i === composition.length - 1) acc = 100; // absorb rounding drift on the last slice
+    return `${cat.color} ${start}% ${acc}%`;
+  });
+  const legendHtml = composition
+    .map((c) => {
+      const cat = CATEGORIES[c.category] || CATEGORIES.misc;
+      return `<span class="dash-pie-legend-item"><span class="dot" style="background:${cat.color}"></span>${cat.label} — ${c.sharePct}%</span>`;
+    })
+    .join("");
+  return `
+    <div class="dash-pie-wrap">
+      <div class="dash-pie" style="background:conic-gradient(${stops.join(", ")})"></div>
+      <div class="dash-pie-legend">${legendHtml}</div>
+    </div>`;
+}
+
+function renderInsight(activityStats) {
+  if (activityStats.length === 0) return "";
+  const avg = Math.round(activityStats.reduce((sum, a) => sum + a.pct, 0) / activityStats.length);
+  const worstText = activityStats
+    .slice(0, 3)
+    .map((a) => `"${a.title}" (${a.pct}%)`)
+    .join(", ");
+  return `📌 เฉลี่ยทำได้ ${avg}% ของกิจกรรมทั้งหมดในช่วงนี้ — ที่พลาดบ่อยสุด: ${worstText} ลองโฟกัสเพิ่มตรงนี้ก่อนนะ`;
+}
+
+function renderStatsListHtml(list, mode) {
+  return list
+    .map((a) => {
+      const cat = CATEGORIES[a.category] || CATEGORIES.misc;
+      const label = mode === "category" ? cat.label : a.title;
+      const sub = mode === "category" ? `${a.done}/${a.denom} completions` : `${a.dayType} · ${a.time}`;
+      return `
+        <div class="dash-row">
+          <div class="dash-meta">
+            <span class="dash-title">${label}</span>
+            <span class="dash-sub">${sub}</span>
+          </div>
+          <div class="dash-bar-track">
+            <div class="dash-bar-fill" style="width:${a.pct}%;background:${cat.color}"></div>
+          </div>
+          <span class="dash-pct">${a.pct}%</span>
+        </div>`;
+    })
+    .join("");
+}
+
+function getFilteredDashboardRows() {
+  return (dashboardRows || []).filter((r) => {
+    if (dashboardFrom && r.date < dashboardFrom) return false;
+    if (dashboardTo && r.date > dashboardTo) return false;
+    return true;
+  });
+}
+
+// Fetches the log once per page load and caches it in `dashboardRows`;
+// subsequent filter/mode changes just re-render from the cache.
+async function ensureDashboardData() {
+  if (dashboardRows !== null) return;
+  const webhookUrl = getSheetsWebhookUrl();
+  if (!webhookUrl) {
+    dashboardRows = [];
+    return;
+  }
+  try {
+    const res = await fetch(webhookUrl, { method: "GET" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    dashboardRows = data.rows || [];
+    dashboardLoadError = null;
+    if (dashboardRows.length > 0) {
+      const dates = dashboardRows.map((r) => r.date).sort();
+      const fromEl = document.getElementById("dashFrom");
+      const toEl = document.getElementById("dashTo");
+      fromEl.min = toEl.min = dates[0];
+      fromEl.max = toEl.max = dates[dates.length - 1];
+    }
+  } catch (err) {
+    console.error("[EFR] failed to load dashboard data:", err);
+    dashboardRows = [];
+    dashboardLoadError = "fetch-failed";
+  }
+}
+
+function renderDashboardBody() {
+  const body = document.getElementById("dashboardBody");
+
+  if (!getSheetsWebhookUrl()) {
+    body.innerHTML = `<p class="dash-empty">Set up Google Sheets logging first (see <code>docs/google-sheets-setup.md</code>) — the dashboard reads from that same log.</p>`;
+    return;
+  }
+  if (dashboardLoadError === "fetch-failed") {
+    body.innerHTML = `<p class="dash-empty">Couldn't load log data — make sure the Apps Script has been redeployed with <code>doGet</code> (see docs/google-sheets-setup.md), then try again.</p>`;
+    return;
+  }
+
+  const rows = getFilteredDashboardRows();
+  if (rows.length === 0) {
+    body.innerHTML = `<p class="dash-empty">No logged days in this range yet.</p>`;
+    return;
+  }
+
+  const { stats, dayTypeCounts } = computeDashboardStats(rows);
+  if (stats.length === 0) {
+    body.innerHTML = `<p class="dash-empty">Not enough data yet.</p>`;
+    return;
+  }
+
+  const summary = dayTypeCounts
+    .map((d) => `${d.dayType}: ${d.days} day${d.days === 1 ? "" : "s"} logged`)
+    .join(" · ");
+  const pieHtml = renderPieHtml(computeCategoryComposition(rows));
+  const insight = renderInsight(stats);
+  const listStats = dashboardMode === "category" ? aggregateByCategory(stats) : stats;
+  const listHtml = renderStatsListHtml(listStats, dashboardMode);
+
+  body.innerHTML = `
+    <p class="dash-summary">${summary}</p>
+    ${pieHtml}
+    <p class="dash-insight">${insight}</p>
+    <div class="dash-list">${listHtml}</div>`;
+}
+
+async function renderDashboardView() {
+  if (dashboardRows === null) {
+    document.getElementById("dashboardBody").innerHTML = `<p class="dash-empty">Loading…</p>`;
+  }
+  await ensureDashboardData();
+  renderDashboardBody();
+}
+
 function renderPriority() {
   const el = document.getElementById("priorityList");
   el.innerHTML = "";
@@ -360,9 +594,22 @@ function resetScheduleToDefault() {
 
 function renderAll() {
   renderTabs();
-  renderLegend();
-  renderTimeline();
-  renderEditControls();
+  const isDashboard = activeTab === DASHBOARD_TAB;
+  document.querySelector(".progress-bar-wrap").hidden = isDashboard;
+  document.getElementById("legend").hidden = isDashboard;
+  document.getElementById("dayNote").hidden = isDashboard;
+  document.getElementById("timeline").hidden = isDashboard;
+  document.getElementById("resourcesSection").hidden = isDashboard;
+  document.getElementById("priorityBox").hidden = isDashboard;
+  document.getElementById("dashboardSection").hidden = !isDashboard;
+
+  if (isDashboard) {
+    renderDashboardView();
+  } else {
+    renderLegend();
+    renderTimeline();
+    renderEditControls();
+  }
 }
 
 document.getElementById("resetBtn").addEventListener("click", () => {
@@ -376,6 +623,31 @@ document.getElementById("editBtn").addEventListener("click", enterEditMode);
 document.getElementById("cancelEditBtn").addEventListener("click", cancelEditMode);
 document.getElementById("saveEditBtn").addEventListener("click", saveEditMode);
 document.getElementById("resetDefaultBtn").addEventListener("click", resetScheduleToDefault);
+
+document.getElementById("dashFrom").addEventListener("change", (e) => {
+  dashboardFrom = e.target.value || null;
+  renderDashboardBody();
+});
+document.getElementById("dashTo").addEventListener("change", (e) => {
+  dashboardTo = e.target.value || null;
+  renderDashboardBody();
+});
+document.getElementById("dashClearFilter").addEventListener("click", () => {
+  dashboardFrom = null;
+  dashboardTo = null;
+  document.getElementById("dashFrom").value = "";
+  document.getElementById("dashTo").value = "";
+  renderDashboardBody();
+});
+document.querySelectorAll("#dashModeToggle .dash-mode-btn").forEach((btn) => {
+  btn.classList.toggle("active", btn.dataset.mode === dashboardMode);
+  btn.addEventListener("click", () => {
+    dashboardMode = btn.dataset.mode;
+    localStorage.setItem(DASH_MODE_KEY, dashboardMode);
+    document.querySelectorAll("#dashModeToggle .dash-mode-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    renderDashboardBody();
+  });
+});
 
 checkDailyRollover();
 renderAll();

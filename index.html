@@ -46,14 +46,33 @@
 
   <ol class="timeline" id="timeline"></ol>
 
-  <section class="section">
+  <section class="section" id="resourcesSection">
     <h2 class="section-title"><span class="bar"></span>Free Learning Resources</h2>
     <div class="resources" id="resources"></div>
   </section>
 
-  <section class="priority-box">
+  <section class="priority-box" id="priorityBox">
     <h2 class="ptitle">⚠️ Short on time? Cut in this order</h2>
     <ol id="priorityList"></ol>
+  </section>
+
+  <section class="section" id="dashboardSection" hidden>
+    <h2 class="section-title"><span class="bar"></span>📊 Where You're Falling Behind</h2>
+    <p class="dash-note">Based on days logged to Google Sheets — a day with nothing checked off never gets logged at all, so this is a best case, not the full picture.</p>
+
+    <div class="dash-controls">
+      <div class="dash-filters">
+        <label>From <input type="date" id="dashFrom"></label>
+        <label>To <input type="date" id="dashTo"></label>
+        <button class="edit-action-btn subtle" id="dashClearFilter">All time</button>
+      </div>
+      <div class="dash-mode-toggle" id="dashModeToggle">
+        <button class="dash-mode-btn" data-mode="activity">Activity</button>
+        <button class="dash-mode-btn" data-mode="category">Category</button>
+      </div>
+    </div>
+
+    <div id="dashboardBody"></div>
   </section>
 
   <footer class="footer-note">

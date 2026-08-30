@@ -68,7 +68,8 @@ open).
 
 ## Updating an existing deployment
 
-If you'd already deployed the script before the row format changed above:
+If you'd already deployed the script before the row format — or the dashboard's `doGet` —
+changed above:
 
 1. Open the sheet → **Extensions → Apps Script**, replace the code with the current
    contents of [`apps-script.gs`](apps-script.gs), and save.
@@ -79,3 +80,8 @@ If you'd already deployed the script before the row format changed above:
 3. If the sheet already has the old header row (`Date, Day Type, Completed, Total,
    Percent, Completed Activities`), delete that row — the script only adds a header when
    the sheet is completely empty, so the new one won't appear on its own otherwise.
+
+This same redeploy step is required for the **"Where You're Falling Behind" dashboard**
+on the page — it reads the sheet back via `doGet`, which only exists once you've pushed
+the current `apps-script.gs` and deployed a new version. Until then the dashboard shows
+a "couldn't load log data" message.

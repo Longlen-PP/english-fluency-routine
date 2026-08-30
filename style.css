@@ -29,6 +29,13 @@
 
 * { box-sizing: border-box; }
 
+/* Several elements below (.timeline, .legend, .progress-bar-wrap, .edit-controls,
+   .tabs) set an explicit `display`, which — per normal CSS cascade rules — beats
+   the browser's default `[hidden] { display: none }` UA rule regardless of
+   specificity. Without this, toggling the `hidden` attribute on them via JS
+   silently does nothing. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -347,6 +354,153 @@ body {
 .ptitle { margin: 0 0 8px; font-size: 14px; font-weight: 800; color: #C2410C; }
 .priority-box ol { margin: 0; padding-left: 18px; font-size: 12.5px; color: #7c3a12; line-height: 1.7; }
 @media (prefers-color-scheme: dark) { .priority-box ol, .ptitle { color: #fdba74; } }
+
+.dash-note {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: -6px 0 14px;
+}
+.dash-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.dash-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+.dash-filters label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.dash-filters input[type="date"] {
+  font-family: inherit;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.dash-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px;
+}
+.dash-mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-soft);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.dash-mode-btn.active { background: linear-gradient(135deg, #2563EB, #7C3AED); color: #fff; }
+.dash-pie-wrap {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.dash-pie { flex: 0 0 140px; width: 140px; height: 140px; border-radius: 50%; position: relative; }
+.dash-pie::after {
+  content: "";
+  position: absolute;
+  inset: 24%;
+  border-radius: 50%;
+  background: var(--bg);
+}
+.dash-pie-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+.dash-pie-legend-item { display: flex; align-items: center; gap: 8px; }
+.dash-pie-legend-item .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.dash-insight {
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+.dash-empty {
+  font-size: 13px;
+  color: var(--text-soft);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  margin: 0;
+}
+.dash-empty code {
+  background: var(--bg-soft);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.dash-summary {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  margin: 0 0 12px;
+}
+.dash-list { display: flex; flex-direction: column; gap: 10px; }
+.dash-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dash-meta {
+  flex: 0 0 180px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dash-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-sub { font-size: 10.5px; color: var(--text-faint); }
+.dash-bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.dash-bar-fill { height: 100%; border-radius: 999px; transition: width 0.25s ease; }
+.dash-pct {
+  flex: 0 0 36px;
+  text-align: right;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+@media (max-width: 480px) {
+  .dash-meta { flex-basis: 120px; }
+}
 
 .footer-note {
   text-align: center;

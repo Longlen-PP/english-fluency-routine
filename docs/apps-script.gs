@@ -21,3 +21,25 @@ function doPost(e) {
     .createTextOutput(JSON.stringify({ status: "ok" }))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+// Lets the app's dashboard read back everything logged so far, to compute
+// which activities get skipped most often.
+function doGet(e) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const values = sheet.getDataRange().getValues();
+  const rows = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    var dateVal = r[0];
+    // The Date column is a Date object once Sheets auto-detects it, not the
+    // original "YYYY-MM-DD" string — normalize back so the dashboard can
+    // group rows by calendar day.
+    var dateStr = (dateVal instanceof Date)
+      ? Utilities.formatDate(dateVal, Session.getScriptTimeZone(), "yyyy-MM-dd")
+      : String(dateVal);
+    rows.push({ date: dateStr, dayType: r[1], time: r[2], category: r[3], activity: r[4] });
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify({ rows: rows }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
