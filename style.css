@@ -406,6 +406,46 @@ body {
   cursor: pointer;
 }
 .dash-mode-btn.active { background: linear-gradient(135deg, #2563EB, #7C3AED); color: #fff; }
+.dash-webhook-row { margin-bottom: 16px; }
+.dash-webhook-toggle {
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dash-webhook-toggle:hover { color: var(--text-soft); }
+.dash-webhook-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.dash-webhook-input {
+  flex: 1 1 260px;
+  min-width: 0;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+}
+.dash-webhook-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.dash-webhook-inline .dash-webhook-input { flex: 1 1 260px; }
+
 .dash-pie-wrap {
   display: flex;
   align-items: center;

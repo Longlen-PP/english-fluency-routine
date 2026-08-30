@@ -11,6 +11,29 @@ function getSheetsWebhookUrl() {
   return localStorage.getItem(SHEETS_URL_KEY) || SHEETS_WEBHOOK_URL || "";
 }
 
+// Shared by both the "no webhook yet" inline field and the persistent ⚙️
+// toggle — saving forces a refetch since the URL (and thus the data behind
+// it) just changed.
+function saveWebhookUrl(url) {
+  const trimmed = url.trim();
+  if (!trimmed) return;
+  localStorage.setItem(SHEETS_URL_KEY, trimmed);
+  dashboardRows = null;
+  dashboardLoadError = null;
+  const editEl = document.getElementById("dashWebhookEdit");
+  if (editEl) editEl.hidden = true;
+  renderDashboardView();
+}
+
+function clearWebhookUrl() {
+  localStorage.removeItem(SHEETS_URL_KEY);
+  dashboardRows = null;
+  dashboardLoadError = null;
+  document.getElementById("dashWebhookInput").value = "";
+  document.getElementById("dashWebhookEdit").hidden = true;
+  renderDashboardView();
+}
+
 function loadScheduleOverride() {
   try {
     const raw = localStorage.getItem(SCHEDULE_OVERRIDE_KEY);
@@ -560,7 +583,20 @@ function renderDashboardBody() {
   const body = document.getElementById("dashboardBody");
 
   if (!getSheetsWebhookUrl()) {
-    body.innerHTML = `<p class="dash-empty">Set up Google Sheets logging first (see <code>docs/google-sheets-setup.md</code>) — the dashboard reads from that same log.</p>`;
+    // No DevTools console on a phone, so this device needs a way to set the
+    // webhook URL that doesn't require one — same field the ⚙️ toggle above
+    // uses, just surfaced automatically when there's nothing configured yet.
+    body.innerHTML = `
+      <p class="dash-empty">Paste your Google Sheets webhook URL below to enable the dashboard on this device (see <code>docs/google-sheets-setup.md</code> to set one up first).</p>
+      <div class="dash-webhook-inline">
+        <input type="url" id="dashEmptyWebhookInput" class="dash-webhook-input"
+               placeholder="https://script.google.com/macros/s/.../exec"
+               autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button class="edit-action-btn primary" id="dashEmptyWebhookSave">Save</button>
+      </div>`;
+    document.getElementById("dashEmptyWebhookSave").addEventListener("click", () => {
+      saveWebhookUrl(document.getElementById("dashEmptyWebhookInput").value);
+    });
     return;
   }
   if (dashboardLoadError === "fetch-failed") {
@@ -727,6 +763,16 @@ document.querySelectorAll("#dashModeToggle .dash-mode-btn").forEach((btn) => {
     renderDashboardBody();
   });
 });
+
+document.getElementById("dashWebhookToggle").addEventListener("click", () => {
+  const editEl = document.getElementById("dashWebhookEdit");
+  editEl.hidden = !editEl.hidden;
+  if (!editEl.hidden) document.getElementById("dashWebhookInput").value = getSheetsWebhookUrl();
+});
+document.getElementById("dashWebhookSave").addEventListener("click", () => {
+  saveWebhookUrl(document.getElementById("dashWebhookInput").value);
+});
+document.getElementById("dashWebhookClear").addEventListener("click", clearWebhookUrl);
 
 checkDailyRollover();
 renderAll();

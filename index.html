@@ -72,6 +72,17 @@
       </div>
     </div>
 
+    <div class="dash-webhook-row">
+      <button class="dash-webhook-toggle" id="dashWebhookToggle" type="button">⚙️ Sheets webhook URL</button>
+      <div class="dash-webhook-edit" id="dashWebhookEdit" hidden>
+        <input type="url" id="dashWebhookInput" class="dash-webhook-input"
+               placeholder="https://script.google.com/macros/s/.../exec"
+               autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button class="edit-action-btn primary" id="dashWebhookSave">Save</button>
+        <button class="edit-action-btn subtle" id="dashWebhookClear">Clear</button>
+      </div>
+    </div>
+
     <div id="dashboardBody"></div>
   </section>
 

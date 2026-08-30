@@ -36,15 +36,18 @@ is a one-time, ~5 minute setup done entirely in your own Google account.
 there is visible to anyone — including the URL, which would let a stranger POST junk
 rows into your sheet.
 
-Instead, set it once in the browser you actually use the site on:
+Instead, set it once in the browser you actually use the site on — there are two ways:
 
-1. Open https://longlen-pp.github.io/english-fluency-routine/
-2. Open DevTools console (F12, or right-click → Inspect → Console tab)
-3. Run:
-   ```js
-   localStorage.setItem("efr-sheets-webhook-url", "https://script.google.com/macros/s/AKfycb.../exec")
-   ```
-4. Reload the page.
+- **In the app itself (works on phones too, no DevTools needed)**: open the **Dashboard**
+  tab. If no URL is set yet, there's a paste field right there — paste the URL and tap
+  **Save**. To change or clear it later, tap **⚙️ Sheets webhook URL** just above the
+  chart for the same field (plus a **Clear** button).
+- **DevTools console (desktop)**: open https://longlen-pp.github.io/english-fluency-routine/,
+  open the console (F12, or right-click → Inspect → Console tab), and run:
+  ```js
+  localStorage.setItem("efr-sheets-webhook-url", "https://script.google.com/macros/s/AKfycb.../exec")
+  ```
+  then reload the page.
 
 This is stored only in that browser's local storage — it's never sent anywhere except
 straight to your own Apps Script, and it's not part of the code anyone else can see.
@@ -64,7 +67,8 @@ open).
 - The Web App URL is not secret-proof even kept client-side — anyone who somehow
   obtains it could technically POST rows to your sheet. Fine for personal tracking;
   don't reuse this pattern for sensitive data.
-- To stop logging on a given browser: `localStorage.removeItem("efr-sheets-webhook-url")`.
+- To stop logging on a given browser: tap **⚙️ Sheets webhook URL** on the Dashboard tab
+  → **Clear**, or run `localStorage.removeItem("efr-sheets-webhook-url")` in DevTools.
 
 ## Updating an existing deployment
 
