@@ -406,10 +406,14 @@ function computeCategoryComposition(rows) {
 function computeActivityComposition(rows) {
   const counts = {};
   const categoryByActivity = {};
+  const timeByActivity = {};
   rows.forEach((r) => {
     counts[r.activity] = (counts[r.activity] || 0) + 1;
     if (!categoryByActivity[r.activity]) {
       categoryByActivity[r.activity] = CATEGORY_LABEL_TO_KEY[r.category] || r.category;
+    }
+    if (!timeByActivity[r.activity]) {
+      timeByActivity[r.activity] = r.time;
     }
   });
   const total = rows.length;
@@ -417,6 +421,7 @@ function computeActivityComposition(rows) {
     .map((title) => ({
       category: categoryByActivity[title], // drives slice color
       label: title, // overrides the category label in the legend
+      time: timeByActivity[title],
       count: counts[title],
       sharePct: total ? Math.round((counts[title] / total) * 1000) / 10 : 0,
     }))
@@ -446,6 +451,41 @@ function renderPieHtml(composition) {
     </div>`;
 }
 
+// The pie only plots what was actually logged (a 0% slice draws nothing), but
+// the ranked list underneath should still surface things NEVER logged at
+// 0% — that's the whole point of a "falling behind" list. These two fill in
+// every possible category/activity, using the composition's contribution %
+// where something was logged and 0 otherwise.
+function buildFullCategoryList(rows) {
+  const composition = computeCategoryComposition(rows);
+  const byCategory = {};
+  composition.forEach((c) => { byCategory[c.category] = c; });
+  return Object.keys(CATEGORIES)
+    .map((key) => {
+      const c = byCategory[key];
+      return { category: key, done: c ? c.count : 0, pct: c ? Math.round(c.sharePct) : 0 };
+    })
+    .sort((a, b) => a.pct - b.pct);
+}
+
+function buildFullActivityList(rows) {
+  const composition = computeActivityComposition(rows);
+  const byTitle = {};
+  composition.forEach((c) => { byTitle[c.label] = c; });
+  const seen = new Set();
+  return buildExpectedActivities()
+    .filter((a) => {
+      if (seen.has(a.title)) return false; // same title shared across both day types
+      seen.add(a.title);
+      return true;
+    })
+    .map((a) => {
+      const c = byTitle[a.title];
+      return { category: a.category, title: a.title, time: a.time, done: c ? c.count : 0, pct: c ? Math.round(c.sharePct) : 0 };
+    })
+    .sort((a, b) => a.pct - b.pct);
+}
+
 function renderInsight(activityStats) {
   if (activityStats.length === 0) return "";
   const avg = Math.round(activityStats.reduce((sum, a) => sum + a.pct, 0) / activityStats.length);
@@ -461,7 +501,9 @@ function renderStatsListHtml(list, mode) {
     .map((a) => {
       const cat = CATEGORIES[a.category] || CATEGORIES.misc;
       const label = mode === "category" ? cat.label : a.title;
-      const sub = mode === "category" ? `${a.done} completion${a.done === 1 ? "" : "s"}` : `${a.dayType} · ${a.time}`;
+      const sub = mode === "category"
+        ? `${a.done} completion${a.done === 1 ? "" : "s"}`
+        : `${a.time} · ${a.done} completion${a.done === 1 ? "" : "s"}`;
       return `
         <div class="dash-row">
           <div class="dash-meta">
@@ -546,15 +588,13 @@ function renderDashboardBody() {
     : computeActivityComposition(rows);
   const pieHtml = renderPieHtml(composition);
   const insight = renderInsight(stats);
-  // Category mode's list mirrors the pie: each bar is that category's share of
-  // everything logged (contribution of the grand total), not a completion
-  // rate — a rate mixing Sleep (always done) with rarely-logged blocks like
-  // Morning nap in the same category read as an arbitrarily low, confusing %.
-  const listStats = dashboardMode === "category"
-    ? composition
-        .map((c) => ({ category: c.category, done: c.count, pct: Math.round(c.sharePct) }))
-        .sort((a, b) => a.pct - b.pct)
-    : stats;
+  // Both modes' lists mirror their pie: each bar is that activity's/category's
+  // share of everything logged in range (contribution of the grand total),
+  // not a completion rate — a rate mixing an always-done locked block (Sleep)
+  // with rarely-logged ones (Morning nap) in the same bucket read as an
+  // arbitrarily low, confusing %. Unlike the pie, the list still lists every
+  // possible activity/category (at 0%) so nothing never logged just vanishes.
+  const listStats = dashboardMode === "category" ? buildFullCategoryList(rows) : buildFullActivityList(rows);
   const listHtml = renderStatsListHtml(listStats, dashboardMode);
 
   body.innerHTML = `
