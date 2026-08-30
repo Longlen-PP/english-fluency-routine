@@ -2,17 +2,46 @@ const STORAGE_KEY = "efr-checklist"; // { [blockId]: true }
 const TAB_KEY = "efr-active-tab";
 const LAST_DATE_KEY = "efr-last-routine-date";
 const SHEETS_URL_KEY = "efr-sheets-webhook-url"; // per-browser override, kept out of the public repo
-const RESET_HOUR = 5; // the checklist rolls over to a new day at 5:00 AM, not midnight
+const SCHEDULE_OVERRIDE_KEY = "efr-schedules-override"; // per-browser edits made via the Edit button, layered on top of data.js
+const RESET_HOUR = 1; // the checklist rolls over to a new day at 1:00 AM, not midnight
 
 function getSheetsWebhookUrl() {
   return localStorage.getItem(SHEETS_URL_KEY) || SHEETS_WEBHOOK_URL || "";
 }
 
-// "Routine date" = calendar date, except 00:00–04:59 still counts as the previous day
-// (so staying up late doesn't wipe last night's checklist before you go to sleep).
+function loadScheduleOverride() {
+  try {
+    const raw = localStorage.getItem(SCHEDULE_OVERRIDE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function saveScheduleOverride(schedules) {
+  localStorage.setItem(SCHEDULE_OVERRIDE_KEY, JSON.stringify(schedules));
+}
+
+// SCHEDULES (from data.js) is the shipped default. Edits made via the Edit
+// button live only in this browser's localStorage, layered on top.
+let scheduleOverride = loadScheduleOverride();
+function getSchedules() {
+  return scheduleOverride || SCHEDULES;
+}
+
+// "Routine date" = calendar date, shifted so the label matches whichever calendar
+// day holds most of the routine, not the day the reset instant happens to fall on.
+// - RESET_HOUR before noon (e.g. 5am): hours before it still count as the previous
+//   day (so staying up late doesn't wipe last night's checklist before bed).
+// - RESET_HOUR from noon on (e.g. 10pm): hours at/after it already count as the
+//   next day (so what you check off all afternoon still logs under today's date,
+//   not yesterday's, when the 10pm reset fires).
 function getRoutineDateKey(d = new Date()) {
   const shifted = new Date(d.getTime());
-  if (shifted.getHours() < RESET_HOUR) shifted.setDate(shifted.getDate() - 1);
+  if (RESET_HOUR < 12) {
+    if (shifted.getHours() < RESET_HOUR) shifted.setDate(shifted.getDate() - 1);
+  } else {
+    if (shifted.getHours() >= RESET_HOUR) shifted.setDate(shifted.getDate() + 1);
+  }
   const y = shifted.getFullYear();
   const m = String(shifted.getMonth() + 1).padStart(2, "0");
   const day = String(shifted.getDate()).padStart(2, "0");
@@ -34,30 +63,33 @@ function checkDailyRollover() {
   return false;
 }
 
-// Sends one summary row for the day that just closed to the Google Sheets
-// webhook configured in data.js (SHEETS_WEBHOOK_URL). No-ops if it's empty,
-// or if nothing was checked off that day (skip logging empty days).
+// Sends one row per completed activity for the day that just closed to the
+// Google Sheets webhook configured in data.js (SHEETS_WEBHOOK_URL). No-ops if
+// it's empty, or if nothing was checked off that day (skip logging empty days).
+// "Locked" blocks (e.g. Sleep) are always counted as completed and included
+// alongside whatever was manually checked, but don't by themselves count as
+// the day having anything logged — an otherwise-empty day still gets skipped.
 function logCompletionForDay(dateKey, checklist) {
   const doneIds = Object.keys(checklist).filter((id) => checklist[id]);
   if (doneIds.length === 0) return;
 
-  const matchedKey = Object.keys(SCHEDULES).find((key) =>
-    SCHEDULES[key].blocks.some((b) => doneIds.includes(b.id))
+  const schedules = getSchedules();
+  const matchedKey = Object.keys(schedules).find((key) =>
+    schedules[key].blocks.some((b) => doneIds.includes(b.id))
   );
   if (!matchedKey) return;
 
-  const schedule = SCHEDULES[matchedKey];
-  const completedTitles = schedule.blocks
-    .filter((b) => doneIds.includes(b.id))
-    .map((b) => b.title);
+  const schedule = schedules[matchedKey];
+  const completed = schedule.blocks.filter((b) => b.locked || doneIds.includes(b.id));
 
   const payload = {
     date: dateKey,
     dayType: schedule.label,
-    completed: completedTitles.length,
-    total: schedule.blocks.length,
-    percent: Math.round((completedTitles.length / schedule.blocks.length) * 100),
-    completedTitles: completedTitles.join("; "),
+    activities: completed.map((b) => ({
+      time: b.time,
+      category: (CATEGORIES[b.category] || {}).label || b.category,
+      title: b.title,
+    })),
   };
 
   const webhookUrl = getSheetsWebhookUrl();
@@ -80,6 +112,11 @@ const dayKeys = Object.keys(SCHEDULES);
 let activeTab = localStorage.getItem(TAB_KEY) || dayKeys[0];
 if (!dayKeys.includes(activeTab)) activeTab = dayKeys[0];
 
+// Edit mode: while active, `draftBlocks` holds the working copy of the active
+// tab's blocks. Nothing is persisted until Save; Cancel just discards it.
+let editMode = false;
+let draftBlocks = null;
+
 function loadChecklist() {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
@@ -93,14 +130,17 @@ function saveChecklist(state) {
 
 function renderTabs() {
   const tabsEl = document.getElementById("tabs");
+  tabsEl.classList.toggle("disabled", editMode);
   tabsEl.innerHTML = "";
+  const schedules = getSchedules();
   dayKeys.forEach((key) => {
     const btn = document.createElement("button");
     btn.className = "tab";
-    btn.textContent = SCHEDULES[key].label;
+    btn.textContent = schedules[key].label;
     btn.role = "tab";
     btn.setAttribute("aria-selected", key === activeTab ? "true" : "false");
     btn.addEventListener("click", () => {
+      if (editMode) return;
       activeTab = key;
       localStorage.setItem(TAB_KEY, activeTab);
       renderAll();
@@ -122,50 +162,107 @@ function renderLegend() {
 }
 
 function renderTimeline() {
-  const schedule = SCHEDULES[activeTab];
+  const schedule = getSchedules()[activeTab];
+  const blocks = editMode ? draftBlocks : schedule.blocks;
   const checklist = loadChecklist();
   const timelineEl = document.getElementById("timeline");
   const noteEl = document.getElementById("dayNote");
-  noteEl.textContent = schedule.note || "";
+  noteEl.textContent = editMode ? "" : (schedule.note || "");
 
   timelineEl.innerHTML = "";
-  schedule.blocks.forEach((block) => {
-    const cat = CATEGORIES[block.category];
-    const done = !!checklist[block.id];
+  blocks.forEach((block, index) => {
+    const cat = CATEGORIES[block.category] || CATEGORIES.misc;
+    const done = block.locked || !!checklist[block.id];
 
     const li = document.createElement("li");
-    li.className = "row" + (done ? " done" : "");
+    li.className = "row" + (editMode ? " editing" : done ? " done" : "");
 
     const badge = document.createElement("div");
     badge.className = "time-badge";
     badge.style.background = cat.color;
-    badge.textContent = block.time;
 
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = "card" + (editMode ? " editing" : "");
     card.style.borderLeftColor = cat.color;
 
-    const check = document.createElement("div");
-    check.className = "card-check";
-    check.style.borderColor = cat.color;
-    check.style.background = done ? cat.color : "transparent";
-    check.textContent = done ? "✓" : "";
+    if (editMode) {
+      const timeInput = document.createElement("input");
+      timeInput.className = "edit-input edit-time";
+      timeInput.value = block.time;
+      timeInput.addEventListener("input", (e) => { draftBlocks[index].time = e.target.value; });
+      badge.appendChild(timeInput);
 
-    const body = document.createElement("div");
-    body.className = "card-body";
-    body.innerHTML = `<div class="title">${block.title}</div>` +
-      (block.detail ? `<div class="detail">${block.detail}</div>` : "");
+      const body = document.createElement("div");
+      body.className = "card-body";
 
-    card.appendChild(check);
-    card.appendChild(body);
-    card.addEventListener("click", () => toggleBlock(block.id));
+      const titleInput = document.createElement("input");
+      titleInput.className = "edit-input edit-title";
+      titleInput.value = block.title;
+      titleInput.addEventListener("input", (e) => { draftBlocks[index].title = e.target.value; });
+
+      const detailInput = document.createElement("textarea");
+      detailInput.className = "edit-input edit-detail";
+      detailInput.rows = 2;
+      detailInput.placeholder = "Detail (optional)";
+      detailInput.value = block.detail || "";
+      detailInput.addEventListener("input", (e) => { draftBlocks[index].detail = e.target.value; });
+
+      const catSelect = document.createElement("select");
+      catSelect.className = "edit-input edit-category";
+      Object.keys(CATEGORIES).forEach((key) => {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = CATEGORIES[key].label;
+        if (key === block.category) opt.selected = true;
+        catSelect.appendChild(opt);
+      });
+      catSelect.addEventListener("change", (e) => {
+        draftBlocks[index].category = e.target.value;
+        renderTimeline();
+      });
+
+      body.appendChild(titleInput);
+      body.appendChild(detailInput);
+      body.appendChild(catSelect);
+      card.appendChild(body);
+    } else {
+      badge.textContent = block.time;
+
+      const check = document.createElement("div");
+      check.className = "card-check";
+      check.style.borderColor = cat.color;
+      check.style.background = done ? cat.color : "transparent";
+      check.textContent = done ? "✓" : "";
+
+      const body = document.createElement("div");
+      body.className = "card-body";
+      const titleEl = document.createElement("div");
+      titleEl.className = "title";
+      titleEl.textContent = block.title;
+      body.appendChild(titleEl);
+      if (block.detail) {
+        const detailEl = document.createElement("div");
+        detailEl.className = "detail";
+        detailEl.textContent = block.detail;
+        body.appendChild(detailEl);
+      }
+
+      card.appendChild(check);
+      card.appendChild(body);
+      if (block.locked) {
+        card.classList.add("locked");
+        card.title = "Always counted as done";
+      } else {
+        card.addEventListener("click", () => toggleBlock(block.id));
+      }
+    }
 
     li.appendChild(badge);
     li.appendChild(card);
     timelineEl.appendChild(li);
   });
 
-  updateProgress(schedule, checklist);
+  if (!editMode) updateProgress(schedule, checklist);
 }
 
 function toggleBlock(id) {
@@ -177,7 +274,7 @@ function toggleBlock(id) {
 
 function updateProgress(schedule, checklist) {
   const total = schedule.blocks.length;
-  const done = schedule.blocks.filter((b) => checklist[b.id]).length;
+  const done = schedule.blocks.filter((b) => b.locked || checklist[b.id]).length;
   const pct = total ? Math.round((done / total) * 100) : 0;
   document.getElementById("progressFill").style.width = pct + "%";
   document.getElementById("progressLabel").textContent = `${done} / ${total} done`;
@@ -212,19 +309,73 @@ function renderPriority() {
   });
 }
 
+function renderEditControls() {
+  document.getElementById("resetBtn").hidden = editMode;
+  document.getElementById("editBtn").hidden = editMode;
+  document.getElementById("editControls").hidden = !editMode;
+  if (editMode) {
+    document.getElementById("editingLabel").textContent = getSchedules()[activeTab].label;
+  }
+}
+
+function enterEditMode() {
+  draftBlocks = getSchedules()[activeTab].blocks.map((b) => ({ ...b }));
+  editMode = true;
+  renderTabs();
+  renderTimeline();
+  renderEditControls();
+}
+
+function cancelEditMode() {
+  editMode = false;
+  draftBlocks = null;
+  renderTabs();
+  renderTimeline();
+  renderEditControls();
+}
+
+function saveEditMode() {
+  const schedules = { ...getSchedules() };
+  schedules[activeTab] = { ...schedules[activeTab], blocks: draftBlocks };
+  scheduleOverride = schedules;
+  saveScheduleOverride(schedules);
+  editMode = false;
+  draftBlocks = null;
+  renderTabs();
+  renderTimeline();
+  renderEditControls();
+}
+
+function resetScheduleToDefault() {
+  const schedules = { ...getSchedules() };
+  schedules[activeTab] = JSON.parse(JSON.stringify(SCHEDULES[activeTab]));
+  scheduleOverride = schedules;
+  saveScheduleOverride(schedules);
+  editMode = false;
+  draftBlocks = null;
+  renderTabs();
+  renderTimeline();
+  renderEditControls();
+}
+
 function renderAll() {
   renderTabs();
   renderLegend();
   renderTimeline();
+  renderEditControls();
 }
 
 document.getElementById("resetBtn").addEventListener("click", () => {
-  const schedule = SCHEDULES[activeTab];
+  const schedule = getSchedules()[activeTab];
   const checklist = loadChecklist();
   schedule.blocks.forEach((b) => delete checklist[b.id]);
   saveChecklist(checklist);
   renderTimeline();
 });
+document.getElementById("editBtn").addEventListener("click", enterEditMode);
+document.getElementById("cancelEditBtn").addEventListener("click", cancelEditMode);
+document.getElementById("saveEditBtn").addEventListener("click", saveEditMode);
+document.getElementById("resetDefaultBtn").addEventListener("click", resetScheduleToDefault);
 
 checkDailyRollover();
 renderAll();

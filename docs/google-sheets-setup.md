@@ -58,7 +58,24 @@ open).
 ## Notes
 
 - Days with nothing checked off are skipped (no empty rows).
+- Each completed activity gets its own row — `Date, Day Type, Time, Category, Activity` —
+  instead of one rolled-up summary row per day. Makes it easy to filter/pivot by activity
+  or category in the sheet later.
 - The Web App URL is not secret-proof even kept client-side — anyone who somehow
   obtains it could technically POST rows to your sheet. Fine for personal tracking;
   don't reuse this pattern for sensitive data.
 - To stop logging on a given browser: `localStorage.removeItem("efr-sheets-webhook-url")`.
+
+## Updating an existing deployment
+
+If you'd already deployed the script before the row format changed above:
+
+1. Open the sheet → **Extensions → Apps Script**, replace the code with the current
+   contents of [`apps-script.gs`](apps-script.gs), and save.
+2. **Deploy → Manage deployments** → click the pencil (edit) icon on your existing
+   deployment → set **Version** to **New version** → **Deploy**. Editing the code alone
+   does not update a live deployment; it stays pinned to whatever version was live when
+   you first deployed until you do this.
+3. If the sheet already has the old header row (`Date, Day Type, Completed, Total,
+   Percent, Completed Activities`), delete that row — the script only adds a header when
+   the sheet is completely empty, so the new one won't appear on its own otherwise.

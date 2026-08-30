@@ -8,25 +8,14 @@ function doPost(e) {
 
   // Add the header row once, the first time the sheet is empty.
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow([
-      "Date",
-      "Day Type",
-      "Completed",
-      "Total",
-      "Percent",
-      "Completed Activities",
-    ]);
+    sheet.appendRow(["Date", "Day Type", "Time", "Category", "Activity"]);
   }
 
   const data = JSON.parse(e.postData.contents);
-  sheet.appendRow([
-    data.date,
-    data.dayType,
-    data.completed,
-    data.total,
-    data.percent + "%",
-    data.completedTitles,
-  ]);
+  const activities = data.activities || [];
+  activities.forEach(function (a) {
+    sheet.appendRow([data.date, data.dayType, a.time, a.category, a.title]);
+  });
 
   return ContentService
     .createTextOutput(JSON.stringify({ status: "ok" }))

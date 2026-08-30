@@ -41,8 +41,7 @@ const SCHEDULES = {
       { id: "mt-15", time: "21:00 – 21:30", title: "Light podcast", category: "english",
         detail: "Relax and listen before bed — no shadowing, no notes" },
       { id: "mt-16", time: "21:30 – 00:00", title: "Football practice", category: "misc" },
-      { id: "mt-17", time: "00:00 – 01:00", title: "Wind down / gaming", category: "rest" },
-      { id: "mt-18", time: "01:00 – 7:00",  title: "Sleep", category: "rest" },
+      { id: "mt-18", time: "00:00 – 7:00",  title: "Sleep", category: "rest", locked: true },
     ],
   },
   "fri-sun": {
@@ -69,8 +68,7 @@ const SCHEDULES = {
       { id: "fs-15", time: "21:00 – 21:30", title: "Light podcast", category: "english",
         detail: "Relax and listen before bed — no shadowing, no notes" },
       { id: "fs-16", time: "21:30 – 00:00", title: "Study: making money with AI", category: "misc" },
-      { id: "fs-17", time: "00:00 – 01:00", title: "Wind down / gaming", category: "rest" },
-      { id: "fs-18", time: "01:00 – 7:00",  title: "Sleep", category: "rest" },
+      { id: "fs-18", time: "00:00 – 7:00",  title: "Sleep", category: "rest", locked: true },
     ],
   },
 };

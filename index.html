@@ -28,6 +28,16 @@
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
     <span class="progress-label" id="progressLabel">0 / 0 done today</span>
     <button class="reset-btn" id="resetBtn" title="Reset today's checklist">Reset</button>
+    <button class="edit-btn" id="editBtn" title="Edit this schedule">Edit</button>
+  </div>
+
+  <div class="edit-controls" id="editControls" hidden>
+    <span class="edit-note">Editing "<span id="editingLabel"></span>" — saved to this browser only.</span>
+    <div class="edit-actions">
+      <button class="edit-action-btn subtle" id="resetDefaultBtn">Reset to default</button>
+      <button class="edit-action-btn" id="cancelEditBtn">Cancel</button>
+      <button class="edit-action-btn primary" id="saveEditBtn">Save</button>
+    </div>
   </div>
 
   <div class="legend" id="legend"></div>
