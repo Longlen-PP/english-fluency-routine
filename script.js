@@ -335,6 +335,18 @@ const CATEGORY_LABEL_TO_KEY = Object.keys(CATEGORIES).reduce((acc, key) => {
   return acc;
 }, {});
 
+// Day-type matching is trimmed + dash-normalized before comparing: a row typed
+// or pasted straight into the Sheet by hand easily ends up with a plain "-"
+// where SCHEDULES' labels use an en dash ("Mon – Thu"), which would otherwise
+// silently drop that day from every stat below.
+function normalizeDayType(s) {
+  return String(s).trim().replace(/[‐‑‒–—―−]/g, "-");
+}
+const NORMALIZED_DAYTYPE_TO_LABEL = Object.keys(SCHEDULES).reduce((acc, key) => {
+  acc[normalizeDayType(SCHEDULES[key].label)] = SCHEDULES[key].label;
+  return acc;
+}, {});
+
 // Denominator per activity = number of distinct days *of that day type* that
 // have any logged row at all (days with zero checked items are never logged,
 // so they can't be counted here — see the caveat note in the dashboard section).
@@ -342,23 +354,25 @@ function computeDashboardStats(rows) {
   const datesByDayType = {};
   const countByKey = {};
   rows.forEach((r) => {
-    if (!datesByDayType[r.dayType]) datesByDayType[r.dayType] = new Set();
-    datesByDayType[r.dayType].add(r.date);
-    const key = r.dayType + "|||" + r.activity;
+    const dtKey = normalizeDayType(r.dayType);
+    if (!datesByDayType[dtKey]) datesByDayType[dtKey] = new Set();
+    datesByDayType[dtKey].add(r.date);
+    const key = dtKey + "|||" + r.activity;
     countByKey[key] = (countByKey[key] || 0) + 1;
   });
 
   const stats = buildExpectedActivities()
     .map((a) => {
-      const denom = (datesByDayType[a.dayType] || new Set()).size;
-      const done = countByKey[a.dayType + "|||" + a.title] || 0;
+      const dtKey = normalizeDayType(a.dayType);
+      const denom = (datesByDayType[dtKey] || new Set()).size;
+      const done = countByKey[dtKey + "|||" + a.title] || 0;
       return { ...a, done, denom, pct: denom ? Math.round((done / denom) * 100) : null };
     })
     .filter((a) => a.denom > 0)
     .sort((a, b) => a.pct - b.pct);
 
   const dayTypeCounts = Object.keys(datesByDayType).map((key) => ({
-    dayType: key,
+    dayType: NORMALIZED_DAYTYPE_TO_LABEL[key] || key,
     days: datesByDayType[key].size,
   }));
 
